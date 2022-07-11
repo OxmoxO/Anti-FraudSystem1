@@ -1,0 +1,2698 @@
+type: edu
+files:
+- name: src/antifraud/AntiFraudApplication.java
+  visible: true
+  text: |-
+    package antifraud;
+
+    import org.springframework.boot.SpringApplication;
+    import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+    @SpringBootApplication
+    public class AntiFraudApplication {
+        public static void main(String[] args) {
+            SpringApplication.
+                    run(AntiFraudApplication.class, args);
+        }
+    }
+  learner_created: false
+- name: src/antifraud/security/RestAuthenticationEntryPoint.java
+  visible: true
+  text: |
+    package antifraud.security;
+
+    import org.springframework.security.core.AuthenticationException;
+    import org.springframework.security.web.AuthenticationEntryPoint;
+    import org.springframework.stereotype.Component;
+
+    import javax.servlet.http.HttpServletRequest;
+    import javax.servlet.http.HttpServletResponse;
+    import java.io.IOException;
+
+    @Component
+    public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
+
+        @Override
+        public void commence(HttpServletRequest request,
+                             HttpServletResponse response,
+                             AuthenticationException authException)
+                                                     throws IOException {
+            response
+                    .sendError(HttpServletResponse.SC_UNAUTHORIZED,
+                               authException.getMessage());
+        }
+    }
+  learner_created: false
+- name: src/antifraud/security/WebSecurityConfig.java
+  visible: true
+  text: |-
+    package antifraud.security;
+
+    import antifraud.model.enums.Role;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.context.annotation.Bean;
+    import org.springframework.http.HttpMethod;
+    import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+    import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+    import org.springframework.security.config.annotation.web.builders.WebSecurity;
+    import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+    import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+    import org.springframework.security.config.http.SessionCreationPolicy;
+    import org.springframework.security.core.userdetails.UserDetailsService;
+    import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+    import org.springframework.security.crypto.password.PasswordEncoder;
+    import org.springframework.security.web.AuthenticationEntryPoint;
+
+    @EnableWebSecurity
+    public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
+        @Autowired
+        UserDetailsService userinfoService;
+
+        @Override
+        protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+            auth
+                    .userDetailsService(userinfoService) // user store 1
+                    .passwordEncoder(getEncoder());
+        }
+
+        @Override
+        public void configure(HttpSecurity http) throws Exception {
+            http
+                    .httpBasic()
+                    .authenticationEntryPoint(getEntryPoint()) // Handles auth error
+                    .and()
+                          .csrf()
+                          .disable()
+                          .headers()
+                          .frameOptions()
+                          .disable() // for Postman, the H2 console
+                    .and()
+                    .authorizeRequests() // manage access
+
+                    .antMatchers("/api/antifraud/transaction/**")
+                    .hasRole(Role.MERCHANT.name())
+
+                    .antMatchers(HttpMethod.POST,"/api/auth/user/**").permitAll()
+
+                    .antMatchers(HttpMethod.DELETE, "/api/auth/user/**")
+                    .hasRole(Role.ADMINISTRATOR.name())
+
+                    .antMatchers("/api/antifraud/access/**",
+                                            "/api/auth/access/**",
+                                            "/api/auth/role/**")
+                    .hasRole(Role.ADMINISTRATOR.name())
+
+                    .antMatchers("/api/auth/list/**")
+                    .hasAnyRole(Role.ADMINISTRATOR.name(),
+                                Role.SUPPORT.name())
+                    .antMatchers("/api/antifraud/**")
+                    .hasRole(Role.SUPPORT.name())
+
+                    .antMatchers("/actuator/shutdown").permitAll() // needs to run test
+
+                    .anyRequest().authenticated().and()
+                    .sessionManagement()
+                    .sessionCreationPolicy(SessionCreationPolicy.STATELESS); // no session
+        }
+
+        @Override
+        public void configure(WebSecurity web) {
+            web.ignoring().antMatchers("/h2-console/**");
+        }
+
+        @Bean
+        public PasswordEncoder getEncoder() {
+            return new BCryptPasswordEncoder();
+        }
+
+        @Bean
+        public AuthenticationEntryPoint getEntryPoint() {
+            return new RestAuthenticationEntryPoint();
+        }
+    }
+  learner_created: false
+- name: src/antifraud/dao/UserDao.java
+  visible: true
+  text: |-
+    package antifraud.dao;
+
+    import antifraud.model.entity.User;
+    import org.springframework.data.repository.CrudRepository;
+    import org.springframework.stereotype.Repository;
+    import java.util.Optional;
+    @Repository
+    public
+    interface UserDao extends CrudRepository<User, Long> {
+        Optional<User> findByUsernameIgnoreCase(String username);
+        boolean existsByUsernameIgnoreCase(String username);
+    }
+  learner_created: false
+- name: src/antifraud/model/dto/StatusDto.java
+  visible: true
+  text: |-
+    package antifraud.model.dto;
+
+    import com.fasterxml.jackson.annotation.JsonInclude;
+    import lombok.AllArgsConstructor;
+    import lombok.Data;
+    import lombok.NonNull;
+    import lombok.RequiredArgsConstructor;
+
+    @AllArgsConstructor
+    @RequiredArgsConstructor
+    @Data
+    public class StatusDto {
+
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String username;
+
+        @NonNull
+        private String status;
+
+        public static class UserLockedDto extends StatusDto {
+            public UserLockedDto(String username) {
+                super(String.format("User %s locked!", username));
+            }
+        }
+
+        public static class UserUnlockedDto extends StatusDto {
+
+            public UserUnlockedDto(String username) {
+                super(String.format("User %s unlocked!", username));
+            }
+        }
+
+        public  static class IpRemovedDto extends StatusDto {
+
+            public IpRemovedDto(String ip) {
+                super(String.format("IP %s successfully removed!", ip));
+            }
+        }
+
+        public static class CreditCardRemovedDto extends StatusDto {
+
+            public CreditCardRemovedDto(String number) {
+                super(String.format("Card %s successfully removed!", number));
+            }
+        }
+
+
+    }
+  learner_created: false
+- name: src/antifraud/model/dto/ResultDto.java
+  visible: true
+  text: |
+    package antifraud.model.dto;
+
+    import com.fasterxml.jackson.annotation.JsonInclude;
+    import lombok.AllArgsConstructor;
+    import lombok.Data;
+
+    @AllArgsConstructor
+    @Data
+    public class ResultDto {
+
+        private String result;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String info;
+    }
+  learner_created: false
+- name: src/antifraud/model/dto/SuspiciousIpDto.java
+  visible: true
+  text: |
+    package antifraud.model.dto;
+
+    import com.fasterxml.jackson.annotation.JsonInclude;
+    import lombok.AllArgsConstructor;
+    import lombok.Data;
+    import lombok.NoArgsConstructor;
+    import lombok.NonNull;
+
+    import javax.validation.constraints.Pattern;
+
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Data
+    public class SuspiciousIpDto {
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private long id;
+
+        @NonNull
+        @Pattern(regexp = "((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)(\\.(?!$)|$)){4}",
+                message = "Wrong IP format!")
+        private String ip;
+    }
+  learner_created: false
+- name: src/antifraud/model/dto/StolenCreditCardDto.java
+  visible: true
+  text: |
+    package antifraud.model.dto;
+
+    import com.fasterxml.jackson.annotation.JsonInclude;
+    import lombok.AllArgsConstructor;
+    import lombok.Data;
+    import lombok.NoArgsConstructor;
+    import lombok.NonNull;
+    import org.hibernate.validator.constraints.LuhnCheck;
+
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Data
+    public class StolenCreditCardDto {
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private long id;
+
+        @NonNull
+        @LuhnCheck(message = "Incorrect card number!")
+        private String number;
+    }
+  learner_created: false
+- name: src/antifraud/model/dto/TransactionDto.java
+  visible: true
+  text: |-
+    package antifraud.model.dto;
+
+    import lombok.AllArgsConstructor;
+    import lombok.Data;
+    import lombok.NoArgsConstructor;
+    import org.hibernate.validator.constraints.LuhnCheck;
+
+    import javax.validation.constraints.Min;
+    import javax.validation.constraints.Pattern;
+
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Data
+    public class TransactionDto {
+
+        @Min(value = 1, message = "Wrong amount!")
+        private long amount;
+
+        @Pattern(regexp = "((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)(\\.(?!$)|$)){4}",
+                message = "Wrong ip format!")
+        private String ip;
+
+        @LuhnCheck(message = "Incorrect card number!")
+        private String number;
+    }
+  learner_created: false
+- name: src/antifraud/model/mapper/ToEntityMapper.java
+  visible: true
+  text: |
+    package antifraud.model.mapper;
+
+    public interface ToEntityMapper<D, E> {
+
+        E toEntity(D dto);
+    }
+  learner_created: false
+- name: src/antifraud/model/mapper/ToDtoMapper.java
+  visible: true
+  text: |
+    package antifraud.model.mapper;
+
+    public interface ToDtoMapper<E, D> {
+
+        D toDto(E entity);
+    }
+  learner_created: false
+- name: src/antifraud/model/entity/TypeOfTransaction.java
+  visible: true
+  text: |+
+    package antifraud.model.entity;
+
+    public enum TypeOfTransaction {
+
+        ALLOWED,
+        PROHIBITED,
+        MANUAL_PROCESSING
+    }
+
+  learner_created: false
+- name: src/antifraud/model/entity/User.java
+  visible: true
+  text: |+
+    package antifraud.model.entity;
+
+    import antifraud.model.enums.Role;
+    import lombok.EqualsAndHashCode;
+    import lombok.Getter;
+    import lombok.NoArgsConstructor;
+    import lombok.NonNull;
+    import lombok.RequiredArgsConstructor;
+    import lombok.Setter;
+
+    import javax.persistence.Entity;
+    import javax.persistence.EnumType;
+    import javax.persistence.Enumerated;
+    import javax.persistence.GeneratedValue;
+    import javax.persistence.GenerationType;
+    import javax.persistence.Id;
+    import javax.persistence.Table;
+    @Entity
+    @Table(name = "user")
+    @NoArgsConstructor
+    @RequiredArgsConstructor
+    @Getter
+    @Setter
+    @EqualsAndHashCode
+    public class User {
+
+        @Id
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private long id;
+
+        @NonNull
+        private String name;
+
+        @NonNull
+        private String username;
+
+        @NonNull
+        private String password;
+
+
+        @Enumerated(EnumType.STRING)
+        private Role role;
+
+        private boolean isLocked;
+    }
+
+  learner_created: false
+- name: src/antifraud/model/mapper/ConverterMapper.java
+  visible: true
+  text: |-
+    package antifraud.model.mapper;
+
+    public interface ConverterMapper<E, D> extends ToDtoMapper<E, D>,
+                                                   ToEntityMapper<D, E> {
+
+    }
+  learner_created: false
+- name: src/antifraud/model/mapper/StolenCardConverterMapper.java
+  visible: true
+  text: |-
+    package antifraud.model.mapper;
+
+    import antifraud.model.dto.StolenCreditCardDto;
+    import antifraud.model.entity.StolenCreditCard;
+    import org.springframework.stereotype.Component;
+
+    @Component
+    public class StolenCardConverterMapper implements ConverterMapper<StolenCreditCard,
+            StolenCreditCardDto> {
+        @Override
+        public StolenCreditCardDto toDto(StolenCreditCard stolenCreditCard) {
+            return new StolenCreditCardDto(stolenCreditCard.getId(),
+                    stolenCreditCard.getNumber());
+        }
+
+        @Override
+        public StolenCreditCard toEntity(StolenCreditCardDto stolenCreditCardDto) {
+            return new StolenCreditCard(stolenCreditCardDto.getId(),
+                    stolenCreditCardDto.getNumber());
+        }
+    }
+  learner_created: false
+- name: src/antifraud/model/entity/StolenCreditCard.java
+  visible: true
+  text: |
+    package antifraud.model.entity;
+
+    import lombok.*;
+
+    import javax.persistence.*;
+
+    @Entity
+    @Table(name = "stolen_credit_card")
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @RequiredArgsConstructor
+    @Getter
+    @Setter
+    public class StolenCreditCard {
+
+        @Id
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private long id;
+
+        @NonNull
+        private String number;
+    }
+  learner_created: false
+- name: src/antifraud/model/mapper/SuspiciousIPConverterMapper.java
+  visible: true
+  text: |
+    package antifraud.model.mapper;
+
+    import antifraud.model.dto.SuspiciousIpDto;
+    import antifraud.model.entity.SuspiciousIp;
+    import org.springframework.stereotype.Component;
+
+    @Component
+    public class SuspiciousIPConverterMapper implements ConverterMapper<SuspiciousIp,
+                                                                        SuspiciousIpDto> {
+
+        @Override
+        public SuspiciousIpDto toDto(SuspiciousIp suspiciousIp) {
+            return new SuspiciousIpDto(suspiciousIp.getId(), suspiciousIp.getIp());
+        }
+
+        @Override
+        public SuspiciousIp toEntity(SuspiciousIpDto suspiciousIpDto) {
+            return new SuspiciousIp(suspiciousIpDto.getId(), suspiciousIpDto.getIp());
+        }
+    }
+  learner_created: false
+- name: src/antifraud/model/entity/SuspiciousIp.java
+  visible: true
+  text: |
+    package antifraud.model.entity;
+
+    import lombok.Getter;
+    import lombok.NoArgsConstructor;
+    import lombok.Setter;
+
+    import javax.persistence.*;
+
+    import lombok.*;
+
+    @Entity
+    @Table(name = "suspicious_ip")
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @RequiredArgsConstructor
+    @Getter
+    @Setter
+    public class SuspiciousIp {
+
+        @Id
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private long id;
+
+        @NonNull
+        private String ip;
+    }
+  learner_created: false
+- name: src/antifraud/dao/SuspiciousIpDao.java
+  visible: true
+  text: |
+    package antifraud.dao;
+
+
+    import antifraud.model.entity.SuspiciousIp;
+    import org.springframework.data.repository.CrudRepository;
+
+    public interface SuspiciousIpDao extends CrudRepository<SuspiciousIp, Long> {
+        boolean existsByIp(String ip);
+
+        SuspiciousIp findFirstByIp(String ip);
+    }
+  learner_created: false
+- name: src/antifraud/dao/StolenCreditCardDao.java
+  visible: true
+  text: |
+    package antifraud.dao;
+
+    import antifraud.model.entity.StolenCreditCard;
+    import org.springframework.data.repository.CrudRepository;
+
+    public interface StolenCreditCardDao extends CrudRepository<StolenCreditCard, Long> {
+
+        boolean existsByNumber(String number);
+
+        StolenCreditCard findFirstByNumber(String cardNumber);
+    }
+  learner_created: false
+- name: src/antifraud/service/CardAndIpService.java
+  visible: true
+  text: |
+    package antifraud.service;
+
+    import antifraud.dao.StolenCreditCardDao;
+    import antifraud.dao.SuspiciousIpDao;
+    import antifraud.dao.UserDao;
+    import antifraud.model.entity.StolenCreditCard;
+    import antifraud.model.entity.SuspiciousIp;
+    import antifraud.model.entity.User;
+    import antifraud.model.enums.Role;
+    import antifraud.security.exeption.CardIsStolenException;
+    import antifraud.security.exeption.CardNotFoundException;
+    import antifraud.security.exeption.IpBannedException;
+    import antifraud.security.exeption.IpNotFoundException;
+    import antifraud.security.exeption.UserExistsException;
+    import antifraud.security.exeption.UserNotFound;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.stereotype.Service;
+
+    import java.util.List;
+
+    @Service
+    public class CardAndIpService {
+
+        private final UserDao userDao;
+        private final SuspiciousIpDao ipDao;
+        private final StolenCreditCardDao cardDao;
+
+        @Autowired
+
+        public CardAndIpService(UserDao userDao, SuspiciousIpDao ipDao, StolenCreditCardDao cardDao) {
+                this.userDao = userDao;
+                this.ipDao = ipDao;
+                this.cardDao = cardDao;
+            }
+
+            public User create(User user) {
+                if (userDao
+                        .existsByUsernameIgnoreCase(user.getUsername())) {
+                    throw new UserExistsException();
+                }
+                user.setRole(countUsers() == 0 ?
+                        Role.ADMINISTRATOR : Role.MERCHANT);
+                user.setLocked(user.getRole() != Role.ADMINISTRATOR);
+                return userDao.save(user);
+            }
+
+            public List<User> getAllUsers() {
+                return (List<User>) userDao.findAll();
+            }
+
+            public void delete(String username) {
+                userDao.delete(findUser(username));
+            }
+            public long countUsers() {
+                return userDao.count();
+            }
+            public User findUser(String username) {
+                return userDao
+                        .findByUsernameIgnoreCase(username)
+                        .orElseThrow(UserNotFound::new);
+            }
+            public void update(User user) {
+                userDao.save(user);
+
+        }
+
+        public SuspiciousIp create(SuspiciousIp ip) {
+            if (isIpBanned(ip.getIp())) {
+                throw new IpBannedException();
+            }
+            return ipDao.save(ip);
+        }
+
+        public boolean isIpBanned(String ip) {
+            return ipDao.existsByIp(ip);
+        }
+
+        public void deleteSuspiciousIp(String ip) {
+            if (!isIpBanned(ip)) {
+                throw new IpNotFoundException();
+            }
+            ipDao.delete(ipDao.findFirstByIp(ip));
+        }
+
+        public List<SuspiciousIp> getAllSuspiciousIps() {
+            return (List<SuspiciousIp>) ipDao.findAll();
+        }
+
+        public StolenCreditCard create(StolenCreditCard card) {
+            if (isCardStolen(card.getNumber())) {
+                throw new CardIsStolenException();
+            }
+            return cardDao.save(card);
+        }
+
+        public boolean isCardStolen(String number) {
+            return cardDao.existsByNumber(number);
+        }
+
+        public void deleteStolenCreditCard(String cardNumber) {
+            if (!isCardStolen(cardNumber)) {
+                throw new CardNotFoundException();
+            }
+            cardDao.delete(cardDao.findFirstByNumber(cardNumber));
+        }
+
+        public List<StolenCreditCard> getAllStolenCards() {
+            return (List<StolenCreditCard>) cardDao.findAll();
+        }
+    }
+  learner_created: false
+- name: src/antifraud/model/dto/UserDto.java
+  visible: true
+  text: |-
+    package antifraud.model.dto;
+
+    import com.fasterxml.jackson.annotation.JsonProperty;
+    import lombok.AllArgsConstructor;
+    import lombok.Builder;
+    import lombok.Data;
+    import lombok.NoArgsConstructor;
+    import javax.validation.constraints.NotEmpty;
+
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Data
+    @Builder
+    public class UserDto {
+
+        private long id;
+
+        @NotEmpty
+        private String name;
+
+        @NotEmpty
+        private String username;
+
+        @NotEmpty
+        @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+        private String password;
+
+        private String role;
+    }
+  learner_created: false
+- name: src/antifraud/model/enums/Role.java
+  visible: true
+  text: |
+    package antifraud.model.enums;
+
+    public enum Role {
+        ADMINISTRATOR,
+        MERCHANT,
+        SUPPORT;
+
+        public String withPrefix() {
+            return "ROLE_" + name();
+        }
+    }
+  learner_created: false
+- name: src/antifraud/security/exeption/CardIsStolenException.java
+  visible: true
+  text: |
+    package antifraud.security.exeption;
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(code = HttpStatus.CONFLICT, reason = "Card is stolen!")
+    public class CardIsStolenException extends RuntimeException{
+
+    }
+  learner_created: false
+- name: src/antifraud/security/exeption/CardNotFoundException.java
+  visible: true
+  text: |
+    package antifraud.security.exeption;
+
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(code = HttpStatus.NOT_FOUND, reason = "Card not found!")
+    public class CardNotFoundException extends RuntimeException{
+    }
+  learner_created: false
+- name: src/antifraud/security/exeption/IpNotFoundException.java
+  visible: true
+  text: |
+    package antifraud.security.exeption;
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(code = HttpStatus.NOT_FOUND, reason = "Ip not found!")
+    public class IpNotFoundException extends RuntimeException{
+    }
+  learner_created: false
+- name: src/antifraud/security/exeption/IpBannedException.java
+  visible: true
+  text: |
+    package antifraud.security.exeption;
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(code = HttpStatus.CONFLICT, reason = "Your IP is banned!")
+    public class IpBannedException extends RuntimeException{ }
+  learner_created: false
+- name: src/antifraud/security/exeption/UserExistsException.java
+  visible: true
+  text: |
+    package antifraud.security.exeption;
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(code = HttpStatus.CONFLICT, reason = "User already Exists!")
+    public class UserExistsException extends RuntimeException{ }
+  learner_created: false
+- name: src/antifraud/model/dto/AmountDto.java
+  visible: true
+  text: |-
+    package antifraud.model.dto;
+
+    import lombok.AllArgsConstructor;
+    import lombok.Data;
+    import lombok.NoArgsConstructor;
+
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Data
+    public class AmountDto {
+        private long amount;
+    }
+  learner_created: false
+- name: src/antifraud/service/TransactionService.java
+  visible: true
+  text: |
+    package antifraud.service;
+
+
+    import antifraud.model.dto.ResultDto;
+    import antifraud.model.dto.TransactionDto;
+    import antifraud.model.enums.TransactionStatus;
+    import antifraud.security.exeption.BadAmountException;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.stereotype.Component;
+    import java.util.Arrays;
+    import java.util.Set;
+    import java.util.TreeSet;
+
+    @Component
+    public class TransactionService {
+        private final CardAndIpService cardAndIpService;
+        private static final String AMOUNT_IS_INCORRECT = "amount";
+        private static final String CARD_IS_STOLEN = "card-number";
+        private static final String IP_IS_BLOCKED = "ip";
+        private static final String ALL_IS_CORRECT = "none";
+
+        @Autowired
+        public TransactionService(CardAndIpService cardAndIpService) {
+            this.cardAndIpService = cardAndIpService;
+        }
+
+        public ResultDto resolve(TransactionDto transactionDto) {
+
+            TransactionStatus status = retrieveTransactionStatus(transactionDto.getAmount());
+
+            Set<String> info = new TreeSet<>();
+            if (status != TransactionStatus.ALLOWED) {
+                info.add(AMOUNT_IS_INCORRECT);
+            }
+
+            if (cardAndIpService.isCardStolen(transactionDto.getNumber())) {
+                clearInfoIfThereMoreSevereStatus(status, info);
+                status = TransactionStatus.PROHIBITED;
+                info.add(CARD_IS_STOLEN);
+            }
+
+            if (cardAndIpService.isIpBanned(transactionDto.getIp())) {
+                clearInfoIfThereMoreSevereStatus(status, info);
+                status = TransactionStatus.PROHIBITED;
+                info.add(IP_IS_BLOCKED);
+            }
+
+            if (status == TransactionStatus.ALLOWED) {
+                info.add(ALL_IS_CORRECT);
+            }
+            return new ResultDto(status.name(),
+                                 String.join(", ", info));
+        }
+
+        private void clearInfoIfThereMoreSevereStatus(TransactionStatus status,
+                                                      Set<String> info) {
+            if (status == TransactionStatus.MANUAL_PROCESSING) {
+                info.clear();
+            }
+        }
+
+        public TransactionStatus retrieveTransactionStatus(long amount) {
+            return Arrays
+                    .stream(TransactionStatus.values())
+                    .filter(val -> Math.max(val.getMin(), amount) ==
+                                   Math.min(amount, val.getMax()))
+                    .findFirst()
+                    .orElseThrow(BadAmountException::new);
+        }
+    }
+  learner_created: false
+- name: src/antifraud/model/enums/Operation.java
+  visible: true
+  text: |-
+    package antifraud.model.enums;
+
+    public enum Operation {
+        LOCK,
+        UNLOCK
+    }
+  learner_created: false
+- name: src/antifraud/security/exeption/BadRequestException.java
+  visible: true
+  text: |
+    package antifraud.security.exeption;
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(code = HttpStatus.BAD_REQUEST)
+    public class BadRequestException extends RuntimeException{
+        public BadRequestException(String message) {
+            super(message);
+        }
+    }
+  learner_created: false
+- name: src/antifraud/security/exeption/RoleIsAlreadyProvidedException.java
+  visible: true
+  text: |
+    package antifraud.security.exeption;
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(code = HttpStatus.CONFLICT, reason = "Excessive role")
+    public class RoleIsAlreadyProvidedException extends RuntimeException{ }
+  learner_created: false
+- name: src/antifraud/model/annotation/OperationCorrect.java
+  visible: true
+  text: |
+    package antifraud.model.annotation;
+
+    import javax.validation.Constraint;
+    import javax.validation.Payload;
+    import javax.validation.ReportAsSingleViolation;
+    import javax.validation.constraints.NotNull;
+    import java.lang.annotation.*;
+
+    @Documented
+    @Constraint(validatedBy = OperationValidator.class)
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.FIELD)
+    @NotNull(message = "Value cannot be null")
+    @ReportAsSingleViolation
+    public @interface OperationCorrect {
+
+        Class<? extends Enum<?>> enumClazz();
+
+        String message() default "Value is not valid";
+
+        Class<?>[] groups() default {};
+
+        Class<? extends Payload>[] payload() default {};
+
+    }
+  learner_created: false
+- name: src/antifraud/model/annotation/OperationValidator.java
+  visible: true
+  text: |
+    package antifraud.model.annotation;
+
+    import javax.validation.ConstraintValidator;
+    import javax.validation.ConstraintValidatorContext;
+    import java.util.ArrayList;
+    import java.util.List;
+
+    public class OperationValidator implements ConstraintValidator<OperationCorrect, String> {
+
+        List<String> valueList = null;
+
+        @Override
+        public boolean isValid(String value, ConstraintValidatorContext context) {
+            return valueList.contains(value);
+        }
+
+        @Override
+        public void initialize(OperationCorrect constraintAnnotation) {
+            valueList = new ArrayList<>();
+            Class<? extends Enum<?>> enumClass = constraintAnnotation.enumClazz();
+
+            @SuppressWarnings("rawtypes")
+            Enum[] enumValArr = enumClass.getEnumConstants();
+
+            for (@SuppressWarnings("rawtypes") Enum enumVal : enumValArr) {
+                valueList.add(enumVal.toString());
+            }
+        }
+    }
+  learner_created: false
+- name: src/antifraud/model/enums/TransactionStatus.java
+  visible: true
+  text: |-
+    package antifraud.model.enums;
+
+    import lombok.Getter;
+
+    @Getter
+    public enum TransactionStatus {
+
+        ALLOWED(1, 200),
+        MANUAL_PROCESSING(201, 1500),
+        PROHIBITED(1501, Long.MAX_VALUE);
+
+        private final long min;
+        private final long max;
+
+        TransactionStatus(long min, long max) {
+            this.min = min;
+            this.max = max;
+        }
+    }
+  learner_created: false
+- name: src/antifraud/security/exeption/BadAmountException.java
+  visible: true
+  text: |
+    package antifraud.security.exeption;
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(code = HttpStatus.BAD_REQUEST, reason = "Bad Value")
+    public class BadAmountException extends RuntimeException{ }
+  learner_created: false
+- name: src/antifraud/model/dto/ChangeRoleDto.java
+  visible: true
+  text: |-
+    package antifraud.model.dto;
+
+
+    import antifraud.model.annotation.RoleCorrect;
+    import antifraud.model.enums.Role;
+    import lombok.Data;
+    import lombok.NoArgsConstructor;
+
+    import javax.validation.constraints.NotEmpty;
+
+    @NoArgsConstructor
+    @Data
+    public class ChangeRoleDto {
+
+        @NotEmpty
+        private String username;
+
+        @RoleCorrect(enumClazz = Role.class, message = "Role incorrect")
+        private String role;
+    }
+  learner_created: false
+- name: src/antifraud/service/UserInfoDetails.java
+  visible: true
+  text: |-
+    package antifraud.service;
+
+    import antifraud.model.entity.User;
+    import org.springframework.security.core.GrantedAuthority;
+    import org.springframework.security.core.authority.SimpleGrantedAuthority;
+    import org.springframework.security.core.userdetails.UserDetails;
+
+    import java.util.Collection;
+    import java.util.List;
+
+    public class UserInfoDetails implements UserDetails {
+        private final String username;
+        private final String password;
+        private final List<GrantedAuthority> rolesAndAuthorities;
+        private final boolean isLocked;
+
+        public UserInfoDetails(User user) {
+
+            username = user.getUsername();
+            password = user.getPassword();
+            rolesAndAuthorities = List.of(
+                                          new SimpleGrantedAuthority(
+                                                      user.getRole().withPrefix()));
+            isLocked = user.isLocked();
+        }
+
+        @Override
+        public Collection<? extends GrantedAuthority> getAuthorities() {
+            return rolesAndAuthorities;
+        }
+
+        @Override
+        public String getPassword() {
+            return password;
+        }
+
+        @Override
+        public String getUsername() {
+            return username;
+        }
+
+        @Override
+        public boolean isAccountNonExpired() {
+            return true;
+        }
+
+        @Override
+        public boolean isAccountNonLocked() {
+            return !isLocked;
+        }
+
+        @Override
+        public boolean isCredentialsNonExpired() {
+            return true;
+        }
+
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+    }
+  learner_created: false
+- name: src/antifraud/service/UserInfoDetailsService.java
+  visible: true
+  text: |
+    package antifraud.service;
+
+
+    import antifraud.dao.UserDao;
+    import antifraud.model.entity.User;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.security.core.userdetails.UserDetails;
+    import org.springframework.security.core.userdetails.UserDetailsService;
+    import org.springframework.security.core.userdetails.UsernameNotFoundException;
+    import org.springframework.stereotype.Service;
+
+    @Service
+    public class UserInfoDetailsService implements UserDetailsService {
+        @Autowired
+        UserDao userDao;
+
+        @Override
+        public UserDetails loadUserByUsername(String username)
+                                              throws UsernameNotFoundException {
+            User user = userDao
+                               .findByUsernameIgnoreCase(username)
+                               .orElse(null);
+
+            if (user == null) {
+                throw new UsernameNotFoundException("Not found: " + username);
+            }
+
+            return new UserInfoDetails(user);
+        }
+    }
+  learner_created: false
+- name: src/antifraud/model/mapper/UserConverterMapper.java
+  visible: true
+  text: |
+    package antifraud.model.mapper;
+
+    import antifraud.model.dto.UserDto;
+    import antifraud.model.entity.User;
+    import org.springframework.stereotype.Component;
+
+    @Component
+    public class UserConverterMapper implements ConverterMapper<User, UserDto> {
+
+        @Override
+        public UserDto toDto(User user) {
+            return UserDto
+                    .builder()
+                    .id(user.getId())
+                    .name(user.getName())
+                    .username(user.getUsername())
+                    .role(user.getRole().name())
+                    .build();
+        }
+
+        @Override
+        public User toEntity(UserDto userDto) {
+            return new User(userDto.getName(),
+                    userDto.getUsername(),
+                    userDto.getPassword());
+        }
+    }
+  learner_created: false
+- name: src/antifraud/controller/UserController.java
+  visible: true
+  text: |-
+    package antifraud.controller;
+
+
+    import antifraud.model.dto.ChangeRoleDto;
+    import antifraud.model.dto.ResultDto;
+    import antifraud.model.dto.StatusDto;
+    import antifraud.model.dto.TransactionDto;
+    import antifraud.model.dto.UserDto;
+    import antifraud.model.dto.UserOperationDto;
+    import antifraud.model.entity.User;
+    import antifraud.model.enums.Operation;
+    import antifraud.model.enums.Role;
+    import antifraud.model.mapper.UserConverterMapper;
+    import antifraud.security.exeption.BadRequestException;
+    import antifraud.security.exeption.RoleIsAlreadyProvidedException;
+    import antifraud.service.CardAndIpService;
+    import antifraud.service.TransactionService;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.http.HttpStatus;
+    import org.springframework.http.ResponseEntity;
+    import org.springframework.security.crypto.password.PasswordEncoder;
+    import org.springframework.validation.annotation.Validated;
+    import org.springframework.web.bind.annotation.DeleteMapping;
+    import org.springframework.web.bind.annotation.GetMapping;
+    import org.springframework.web.bind.annotation.PathVariable;
+    import org.springframework.web.bind.annotation.PostMapping;
+    import org.springframework.web.bind.annotation.PutMapping;
+    import org.springframework.web.bind.annotation.RequestBody;
+    import org.springframework.web.bind.annotation.RestController;
+
+    import javax.validation.Valid;
+    import java.util.List;
+    import java.util.stream.Collectors;
+
+    @RestController
+    @Validated
+    public class UserController {
+            private final CardAndIpService cardAndIpService;
+            private final UserConverterMapper userMapper;
+            private final PasswordEncoder passwordEncoder;
+            private final TransactionService transactionService;
+
+            @Autowired
+            public UserController(CardAndIpService cardAndIpService,
+                                  UserConverterMapper userMapper,
+                                  PasswordEncoder passwordEncoder,
+                                  TransactionService transactionService) {
+
+                this.cardAndIpService = cardAndIpService;
+                this.userMapper = userMapper;
+                this.passwordEncoder = passwordEncoder;
+                this.transactionService = transactionService;
+            }
+
+            @PostMapping("/api/antifraud/transaction")
+            public ResultDto acceptTransaction(@RequestBody @Valid TransactionDto transactionDto) {
+                return transactionService.resolve(transactionDto);
+            }
+
+            @PostMapping("/api/auth/user")
+            public ResponseEntity<UserDto> createUser(@RequestBody @Valid UserDto userDto) {
+                userDto.setPassword(passwordEncoder.encode(userDto.getPassword()));
+                User newUser = cardAndIpService.create(userMapper.toEntity(userDto));
+                return new ResponseEntity<>(userMapper.toDto(newUser),
+                                                    HttpStatus.CREATED);
+            }
+
+            @GetMapping("/api/auth/list")
+            public List<UserDto> getAllUsers() {
+                return cardAndIpService
+                                        .getAllUsers()
+                                        .stream()
+                                        .map(userMapper::toDto)
+                                        .collect(Collectors.toList());
+            }
+
+            @DeleteMapping("/api/auth/user/{username}")
+            public StatusDto deleteUser(@PathVariable String username) {
+                cardAndIpService.delete(username);
+                return new StatusDto(username, "Deleted successfully!");
+            }
+
+            @PutMapping("/api/auth/role")
+            public UserDto updateUserRole(@RequestBody @Valid ChangeRoleDto changeRoleDto) {
+                User user = cardAndIpService.findUser(changeRoleDto.getUsername());
+                Role newRole = Role.valueOf(changeRoleDto.getRole());
+                if (!List.of(Role.MERCHANT, Role.SUPPORT).contains(newRole)) {
+                            throw new BadRequestException("Operation not allowed!");
+                }
+
+                if (user.getRole() == newRole) {
+                    throw new RoleIsAlreadyProvidedException();
+                }
+                user.setRole(newRole);
+                cardAndIpService.update(user);
+                return userMapper.toDto(user);
+            }
+
+            @PutMapping("/api/auth/access")
+            public StatusDto lockUnlockUser(@RequestBody @Valid UserOperationDto userOperationDto) {
+                String username = userOperationDto.getUsername();
+                User user = cardAndIpService.findUser(username);
+
+                if (user.getRole() == Role.ADMINISTRATOR) {
+                    throw new BadRequestException("Operation not allowed!");
+                }
+
+                Operation operation = Operation.valueOf(userOperationDto.getOperation());
+                user.setLocked(operation == Operation.LOCK);
+                cardAndIpService.update(user);
+                return operation == Operation.LOCK ?
+                        new StatusDto.UserLockedDto(username) :
+                        new StatusDto.UserUnlockedDto(username);
+            }
+    }
+  learner_created: false
+- name: src/antifraud/controller/CardAndIpController.java
+  visible: true
+  text: |
+    package antifraud.controller;
+
+    import antifraud.model.dto.StatusDto;
+    import antifraud.model.dto.StolenCreditCardDto;
+    import antifraud.model.dto.SuspiciousIpDto;
+    import antifraud.model.entity.StolenCreditCard;
+    import antifraud.model.entity.SuspiciousIp;
+    import antifraud.model.mapper.ConverterMapper;
+    import antifraud.service.CardAndIpService;
+    import org.hibernate.validator.constraints.LuhnCheck;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.http.ResponseEntity;
+    import org.springframework.validation.annotation.Validated;
+    import org.springframework.web.bind.annotation.DeleteMapping;
+    import org.springframework.web.bind.annotation.GetMapping;
+    import org.springframework.web.bind.annotation.PathVariable;
+    import org.springframework.web.bind.annotation.PostMapping;
+    import org.springframework.web.bind.annotation.RequestBody;
+    import org.springframework.web.bind.annotation.RestController;
+
+    import javax.validation.Valid;
+    import javax.validation.constraints.Pattern;
+    import java.util.List;
+    import java.util.stream.Collectors;
+
+    @RestController
+    @Validated
+    public class CardAndIpController {
+        private final CardAndIpService cardAndIpService;
+        private final ConverterMapper<StolenCreditCard, StolenCreditCardDto> cardMapper;
+        private final ConverterMapper<SuspiciousIp, SuspiciousIpDto> ipMapper;
+
+        @Autowired
+        public CardAndIpController(CardAndIpService cardAndIpService,
+                                   ConverterMapper<StolenCreditCard, StolenCreditCardDto> cardMapper,
+                                   ConverterMapper<SuspiciousIp, SuspiciousIpDto> ipMapper) {
+
+            this.cardAndIpService = cardAndIpService;
+            this.cardMapper = cardMapper;
+            this.ipMapper = ipMapper;
+        }
+
+        @PostMapping("/api/antifraud/suspicious-ip")
+        public ResponseEntity<SuspiciousIpDto> addSuspiciousIP(@RequestBody @Valid SuspiciousIpDto ipDto) {
+            SuspiciousIp ip = cardAndIpService.create(ipMapper.toEntity(ipDto));
+            ipDto.setId(ip.getId());
+            return ResponseEntity.ok(ipDto);
+        }
+
+        @DeleteMapping("/api/antifraud/suspicious-ip/{ip}")
+        public StatusDto.IpRemovedDto deleteSuspiciousIP(@PathVariable @Valid
+                                                             @Pattern(regexp = "((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)(\\.(?!$)|$)){4}",
+                                                                     message = "Wrong ip format!")
+                                                             String ip) {
+            cardAndIpService.deleteSuspiciousIp(ip);
+            return new StatusDto.IpRemovedDto(ip);
+        }
+
+        @GetMapping("/api/antifraud/suspicious-ip")
+        public List<SuspiciousIpDto> showAllSuspiciousIPs() {
+            return cardAndIpService.getAllSuspiciousIps().stream()
+                    .map(ipMapper::toDto)
+                    .collect(Collectors.toList());
+        }
+
+        @PostMapping("/api/antifraud/stolencard")
+        public ResponseEntity<StolenCreditCardDto> addStolenCard(@RequestBody @Valid StolenCreditCardDto cardDto) {
+            StolenCreditCard card = cardAndIpService.create(cardMapper.toEntity(cardDto));
+            cardDto.setId(card.getId());
+            return ResponseEntity.ok(cardDto);
+        }
+
+        @DeleteMapping("/api/antifraud/stolencard/{number}")
+        public StatusDto.CreditCardRemovedDto deleteStolenCard(@PathVariable @Valid @LuhnCheck String number) {
+            cardAndIpService.deleteStolenCreditCard(number);
+            return new StatusDto.CreditCardRemovedDto(number);
+        }
+
+        @GetMapping("/api/antifraud/stolencard")
+        public List<StolenCreditCardDto> showAllStolenCards() {
+            return cardAndIpService
+                    .getAllStolenCards()
+                    .stream()
+                    .map(cardMapper::toDto)
+                    .collect(Collectors.toList());
+        }
+    }
+  learner_created: false
+- name: build.gradle
+  visible: true
+  text: |-
+    plugins {
+        id 'java'
+        id 'org.springframework.boot' version '2.3.1.RELEASE'
+        id 'io.spring.dependency-management' version '1.0.9.RELEASE'
+    }
+
+
+    repositories {
+        mavenCentral()
+    }
+
+    sourceSets.main.resources.srcDirs = ["src/resources"]
+
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter'
+        implementation 'org.springframework.boot:spring-boot-starter-actuator'
+        implementation 'org.springframework.boot:spring-boot-starter-web'
+        implementation group: 'org.hibernate', name: 'hibernate-validator', version: '6.1.0.Final'
+
+        compileOnly 'org.projectlombok:lombok:1.18.24'
+        annotationProcessor 'org.projectlombok:lombok:1.18.24'
+
+        testCompileOnly 'org.projectlombok:lombok:1.18.24'
+        testAnnotationProcessor 'org.projectlombok:lombok:1.18.24'
+
+        implementation 'org.springframework.boot:spring-boot-starter-security'
+        runtimeOnly 'com.h2database:h2'
+        implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    }
+  learner_created: false
+- name: src/resources/application.properties
+  visible: true
+  text: |-
+    server.port=28852
+    server.error.include-message=always
+    management.endpoints.web.exposure.include=*
+    management.endpoint.shutdown.enabled=true
+    spring.jackson.serialization.INDENT_OUTPUT=true
+
+    spring.datasource.url=jdbc:h2:file:../service_db
+    spring.datasource.driverClassName=org.h2.Driver
+    spring.datasource.username=sa
+    spring.datasource.password=
+    spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+    spring.jpa.hibernate.ddl-auto=update
+  learner_created: false
+- name: src/antifraud/security/exeption/ConstraintViolationHandler.java
+  visible: true
+  text: |
+    package antifraud.security.exeption;
+
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ControllerAdvice;
+    import org.springframework.web.bind.annotation.ExceptionHandler;
+    import org.springframework.web.context.request.ServletWebRequest;
+
+    import javax.validation.ConstraintViolationException;
+    import java.io.IOException;
+    import java.util.Objects;
+
+    @ControllerAdvice
+    public class ConstraintViolationHandler {
+
+        @ExceptionHandler(ConstraintViolationException.class)
+        public void handleConstraintViolationException(ConstraintViolationException exception,
+                                                       ServletWebRequest webRequest) throws IOException {
+
+            Objects.requireNonNull(webRequest
+                            .getResponse())
+                    .sendError(HttpStatus.BAD_REQUEST.value(),
+                                      exception.getMessage());
+        }
+    }
+  learner_created: false
+- name: test/AntiFraudTest.java
+  visible: false
+  text: |-
+    import antifraud.AntiFraudApplication;
+    import com.google.gson.JsonArray;
+    import com.google.gson.JsonObject;
+    import org.hyperskill.hstest.dynamic.DynamicTest;
+    import org.hyperskill.hstest.dynamic.input.DynamicTesting;
+    import org.hyperskill.hstest.exception.outcomes.UnexpectedError;
+    import org.hyperskill.hstest.exception.outcomes.WrongAnswer;
+    import org.hyperskill.hstest.mocks.web.request.HttpRequest;
+    import org.hyperskill.hstest.mocks.web.response.HttpResponse;
+    import org.hyperskill.hstest.stage.SpringTest;
+    import org.hyperskill.hstest.testcase.CheckResult;
+
+    import java.util.ArrayList;
+    import java.util.List;
+
+    import static org.hyperskill.hstest.common.JsonUtils.getJson;
+    import static org.hyperskill.hstest.testing.expect.Expectation.expect;
+    import static org.hyperskill.hstest.testing.expect.json.JsonChecker.*;
+
+    class TestHint {
+        private final String apiPath;
+        private final String requestBody;
+        private final String message;
+
+        public TestHint(String apiPath, String requestBody, String message) {
+            this.apiPath = apiPath;
+            this.requestBody = requestBody;
+            this.message = message;
+        }
+
+        @Override
+        public String toString() {
+            return "Test case\n" +
+                    "Testing api: '" + apiPath + '\'' + "\n" +
+                    (requestBody.length() > 0 ? "request: '" + requestBody + '\'' + "\n" : "") +
+                    "Expectations: '" + message + "'" + "\n" +
+                    "-----";
+        }
+    }
+
+    public class AntiFraudTest extends SpringTest {
+
+        private final String transactionApi = "/api/antifraud/transaction";
+        private final String userApi = "/api/auth/user";
+        private final String userListApi = "/api/auth/list";
+        private final String lockApi = "/api/auth/access";
+        private final String roleApi = "/api/auth/role";
+        private final String ipApi = "/api/antifraud/suspicious-ip";
+        private final String cardApi = "/api/antifraud/stolencard";
+        List<Integer> userIdList = new ArrayList<>();
+
+        private final String administrator = "{\n" +
+                "   \"name\": \"administrator\",\n" +
+                "   \"username\": \"administrator\",\n" +
+                "   \"password\": \"oMoa4VvqnLxW\"\n" +
+                "}";
+
+        private final String johndoe1 = "{\n" +
+                "   \"name\": \"John Doe 1\",\n" +
+                "   \"username\": \"johndoe1\",\n" +
+                "   \"password\": \"oMoa3VvqnLxW\"\n" +
+                "}";
+
+        private final String johndoe2 = "{\n" +
+                "   \"name\": \"John Doe 2\",\n" +
+                "   \"username\": \"johndoe2\",\n" +
+                "   \"password\": \"oMoa5VvqnLxW\"\n" +
+                "}";
+
+        private final String johndoe3 = "{\n" +
+                "   \"name\": \"John Doe 3\",\n" +
+                "   \"username\": \"johndoe3\",\n" +
+                "   \"password\": \"oMoa6VvqnLxW\"\n" +
+                "}";
+
+        private final String wronguser1 = "{\n" +
+                "   \"name\": \"John Doe 1\",\n" +
+                "   \"password\": \"oa3VvqnLxW\"\n" +
+                "}";
+
+        private final String wronguser2 = "{\n" +
+                "   \"name\": \"John Doe 2\",\n" +
+                "   \"username\": \"johndoe1\"\n" +
+                "}";
+
+        private final String wronguserCred1 = "{\n" +
+                "   \"name\": \"John Doe 1\",\n" +
+                "   \"username\": \"johndoe1\",\n" +
+                "   \"password\": \"oa3VvqnLxW\"\n" +
+                "}";
+
+        private final String wronguserCred2 = "{\n" +
+                "   \"name\": \"John Do\",\n" +
+                "   \"username\": \"johndo\",\n" +
+                "   \"password\": \"oMoa3VvqnLxW\"\n" +
+                "}";
+
+        private final String listAnswer1 = "[ {\n" +
+                "  \"id\" : 1,\n" +
+                "  \"name\" : \"administrator\",\n" +
+                "  \"username\" : \"administrator\",\n" +
+                "  \"role\" : \"ADMINISTRATOR\"\n" +
+                "}, {\n" +
+                "  \"id\" : 2,\n" +
+                "  \"name\" : \"John Doe 1\",\n" +
+                "  \"username\" : \"johndoe1\",\n" +
+                "  \"role\" : \"MERCHANT\"\n" +
+                "}, {\n" +
+                "  \"id\" : 4,\n" +
+                "  \"name\" : \"John Doe 2\",\n" +
+                "  \"username\" : \"johndoe2\",\n" +
+                "  \"role\" : \"MERCHANT\"\n" +
+                "} ]";
+
+        private final String listAnswer2 = "[ {\n" +
+                "  \"id\" : 1,\n" +
+                "  \"name\" : \"administrator\",\n" +
+                "  \"username\" : \"administrator\",\n" +
+                "  \"role\" : \"ADMINISTRATOR\"\n" +
+                "}, {\n" +
+                "  \"id\" : 4,\n" +
+                "  \"name\" : \"John Doe 2\",\n" +
+                "  \"username\" : \"johndoe2\",\n" +
+                "  \"role\" : \"MERCHANT\"\n" +
+                "} ]";
+
+        private final String listAnswer3 = "[ {\n" +
+                "  \"id\" : 1,\n" +
+                "  \"name\" : \"administrator\",\n" +
+                "  \"username\" : \"administrator\",\n" +
+                "  \"role\" : \"ADMINISTRATOR\"\n" +
+                "}, {\n" +
+                "  \"id\" : 4,\n" +
+                "  \"name\" : \"John Doe 2\",\n" +
+                "  \"username\" : \"johndoe2\",\n" +
+                "  \"role\" : \"SUPPORT\"\n" +
+                "} ]";
+
+        private final String tr1 = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        private final String tr2 = "{\n" +
+                "  \"amount\": 199,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:01:00\"\n" +
+                "}";
+
+        private final String tr3 = "{\n" +
+                "  \"amount\": 200,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:02:00\"\n" +
+                "}";
+
+        private final String tr4 = "{\n" +
+                "  \"amount\": 201,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:03:00\"\n" +
+                "}";
+
+        private final String tr5 = "{\n" +
+                "  \"amount\": 1499,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:04:00\"\n" +
+                "}";
+
+        private final String tr6 = "{\n" +
+                "  \"amount\": 1500,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:05:00\"\n" +
+                "}";
+
+        private final String tr7 = "{\n" +
+                "  \"amount\": 1501,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:06:00\"\n" +
+                "}";
+
+        private final String tr8 = "{\n" +
+                "  \"amount\": 2000,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:07:00\"\n" +
+                "}";
+
+        private final String trW1 = "{\n" +
+                "  \"amount\": -1,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        private final String trW2 = "{\n" +
+                "  \"amount\": 0,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        private final String trW3 = "{\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        private final String trW4 = "{\n" +
+                "  \"amount\": \" \",\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        private final String trW5 = "{\n" +
+                "  \"amount\": \"\",\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        private final String trW6 = "{ }";
+
+        private final String trP1 = "{\n" +
+                "  \"amount\": 1000,\n" +
+                "  \"ip\": \"192.168.1.67\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        private final String trP2 = "{\n" +
+                "  \"amount\": 1000,\n" +
+                "  \"ip\": \"192.168.1.1\",\n" +
+                "  \"number\": \"4000003305160034\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        private final String trP3 = "{\n" +
+                "  \"amount\": 1000,\n" +
+                "  \"ip\": \"192.168.1.67\",\n" +
+                "  \"number\": \"4000003305160034\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        private final String trP4 = "{\n" +
+                "  \"amount\": 2000,\n" +
+                "  \"ip\": \"192.168.1.67\",\n" +
+                "  \"number\": \"4000003305160034\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T16:00:00\"\n" +
+                "}";
+
+        // correlation rules
+        private final String corr1IP = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.2\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T17:10:00\"\n" +
+                "}";
+
+        private final String corr2IP = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.3\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T17:11:00\"\n" +
+                "}";
+
+        private final String corr22IP = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.3\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T17:12:00\"\n" +
+                "}";
+
+        private final String corr3IP = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.4\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T17:12:00\"\n" +
+                "}";
+
+        private final String corr4IP = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.5\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T17:13:00\"\n" +
+                "}";
+
+        private final String corr5IP = "{\n" +
+                "  \"amount\": 2000,\n" +
+                "  \"ip\": \"192.168.1.5\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-22T17:14:00\"\n" +
+                "}";
+
+        private final String corr1Reg = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.2\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"EAP\",\n" +
+                "  \"date\": \"2022-01-21T17:10:00\"\n" +
+                "}";
+
+        private final String corr2Reg = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.2\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"ECA\",\n" +
+                "  \"date\": \"2022-01-21T17:11:00\"\n" +
+                "}";
+
+        private final String corr22Reg = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.2\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"ECA\",\n" +
+                "  \"date\": \"2022-01-21T17:12:00\"\n" +
+                "}";
+
+        private final String corr3Reg = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.2\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"HIC\",\n" +
+                "  \"date\": \"2022-01-21T17:13:00\"\n" +
+                "}";
+
+        private final String corr4Reg = "{\n" +
+                "  \"amount\": 1,\n" +
+                "  \"ip\": \"192.168.1.2\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"SSA\",\n" +
+                "  \"date\": \"2022-01-21T17:14:00\"\n" +
+                "}";
+
+        private final String corr5Reg = "{\n" +
+                "  \"amount\": 2000,\n" +
+                "  \"ip\": \"192.168.1.2\",\n" +
+                "  \"number\": \"4000008449433403\",\n" +
+                "  \"region\": \"SA\",\n" +
+                "  \"date\": \"2022-01-21T17:15:00\"\n" +
+                "}";
+
+
+
+
+
+        private final String ipAnswer = "[ {\n" +
+                "  \"id\" : 1,\n" +
+                "  \"ip\" : \"192.168.1.66\"\n" +
+                "}, {\n" +
+                "  \"id\" : 2,\n" +
+                "  \"ip\" : \"192.168.1.67\"\n" +
+                "} ]";
+
+        private final String ipAnswer2 = "[ {\n" +
+                "  \"id\" : 2,\n" +
+                "  \"ip\" : \"192.168.1.67\"\n" +
+                "} ]";
+
+        private final String ipAnswerEmpty = "[]";
+
+        private final String cardAnswerEmpty = "[]";
+
+        private final String cardAnswer = "[ {\n" +
+                "  \"id\" : 1,\n" +
+                "  \"number\" : \"4000003305061034\"\n" +
+                "}, {\n" +
+                "  \"id\" : 2,\n" +
+                "  \"number\" : \"4000003305160034\"\n" +
+                "} ]";
+
+        private final String cardAnswer2 = "[ {\n" +
+                "  \"id\" : 2,\n" +
+                "  \"number\" : \"4000003305160034\"\n" +
+                "} ]";
+
+
+
+
+        public AntiFraudTest() {
+            super(AntiFraudApplication.class, "../service_db.mv.db");
+        }
+
+        /**
+         * Method for restarting application
+         *
+         */
+        private CheckResult restartApplication() {
+            try {
+                reloadSpring();
+            } catch (Exception ex) {
+                throw new UnexpectedError(ex.getMessage());
+            }
+            return CheckResult.correct();
+        }
+
+        private HttpResponse checkResponseStatus(String user, String body,
+                                                 int status, String api, String method) {
+            HttpRequest request = null;
+            switch (method) {
+                case "GET":
+                    request = get(api);
+                    break;
+                case "POST":
+                    request = post(api, body);
+                    break;
+                case "PUT":
+                    request = put(api, body);
+                    break;
+                case "DELETE":
+                    request = delete(api);
+                    break;
+            }
+
+            if (user != null) {
+                JsonObject userJson = getJson(user).getAsJsonObject();
+                String password = userJson.get("password").getAsString();
+                String login = userJson.get("username").getAsString().toLowerCase();
+                request = request.basicAuth(login, password);
+            }
+            HttpResponse response = request.send();
+
+            if (response.getStatusCode() != status) {
+                throw new WrongAnswer(method + " " + api  + " should respond with "
+                        + "status code " + status + ", responded: " + response.getStatusCode() + "\n"
+                        + "Response body:\n" + response.getContent() + "\n");
+            }
+            return response;
+        }
+
+        public boolean isNumeric(String strNum) {
+            if (strNum == null) {
+                return false;
+            }
+            try {
+                long l = Long.parseLong(strNum);
+            } catch (NumberFormatException nfe) {
+                return false;
+            }
+            return true;
+        }
+
+        CheckResult testAddUser(String body, int status, String role, TestHint hint) {
+
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(null, body, status, userApi, "POST");
+
+
+            if (response.getStatusCode() == 201) {
+
+                JsonObject rightResponse = getJson(body).getAsJsonObject();
+                rightResponse.remove("password");
+
+                // Check is it JSON in response or something else
+                if (!response.getJson().isJsonObject()) {
+                    return CheckResult.wrong("Wrong object in response, expected JSON but was \n" +
+                            response.getContent().getClass());
+
+                }
+
+                JsonObject jsonResponse = response.getJson().getAsJsonObject();
+
+                // Check if password is presence in response
+                if (jsonResponse.get("password") != null) {
+                    return CheckResult.wrong("You must remove password from response\n" +
+                            jsonResponse);
+                }
+
+                if (jsonResponse.get("id").isJsonNull()) {
+                    return CheckResult.wrong("Response must contain user ID\n" +
+                            "Received response:\n" +
+                            jsonResponse);
+                }
+
+                if (userIdList.contains(jsonResponse.get("id").getAsInt())) {
+                    return CheckResult.wrong("User ID must be unique!\n" +
+                            "Received response:\n" +
+                            jsonResponse);
+                }
+
+                rightResponse.addProperty("id", jsonResponse.get("id").toString());
+                // Check JSON in response
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("id", isInteger())
+                                .value("name", rightResponse.get("name").getAsString())
+                                .value("role", role)
+                                .value("username", isString(s -> s.equalsIgnoreCase(rightResponse.get("username").getAsString())))
+                );
+                userIdList.add(jsonResponse.get("id").getAsInt());
+            }
+            return CheckResult.correct();
+        }
+
+        CheckResult testDeleteUser(String body, int status, String user, TestHint hint) {
+
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(body, "", status, userApi + "/" + user, "DELETE");
+
+            if (response.getStatusCode() == 200) {
+
+                // Check is it JSON in response or something else
+                if (!response.getJson().isJsonObject()) {
+                    return CheckResult.wrong("Wrong object in response, expected JSON but was \n" +
+                            response.getContent().getClass());
+
+                }
+
+                JsonObject jsonResponse = response.getJson().getAsJsonObject();
+
+                // Check JSON in response
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("status", "Deleted successfully!")
+                                .value("username", isString(s -> s.equalsIgnoreCase(user)))
+                );
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testListUser(String user, int status, String answer,
+                                         int position, TestHint hint) {
+
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(user, "", status, userListApi, "GET");
+
+            if (response.getStatusCode() == 200) {
+                // Check is it array of JSON in response or something else
+                if (!response.getJson().isJsonArray()) {
+                    return CheckResult.wrong("Wrong object in response, expected array of JSON but was \n" +
+                            response.getContent().getClass());
+
+                }
+
+                JsonArray correctJson = getJson(answer).getAsJsonArray();
+                JsonArray responseJson = getJson(response.getContent()).getAsJsonArray();
+                if (responseJson.size() == 0) {
+                    throw new WrongAnswer("Empty array in response!");
+                }
+
+                if (responseJson.size() != position + 1) {
+                    throw new WrongAnswer("Incorrect number - " +  responseJson.size() +
+                            " users in response, must be - " + (position + 1));
+                }
+
+                // Check JSON in response
+                expect(responseJson.get(position).toString()).asJson().check(
+                        isObject()
+                                .value("id", isInteger())
+                                .value("name", correctJson.get(position).getAsJsonObject().get("name").getAsString())
+                                .value("role", correctJson.get(position).getAsJsonObject().get("role").getAsString())
+                                .value("username",
+                                        isString(s -> s.equalsIgnoreCase(correctJson.get(position).getAsJsonObject()
+                                                .get("username").getAsString()))
+                                ));
+
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testLock(String user, int status, String operation, String username, TestHint hint) {
+            System.out.println(hint.toString());
+
+            JsonObject jsonBody = new JsonObject();
+            jsonBody.addProperty("username", username);
+            jsonBody.addProperty("operation", operation);
+
+            HttpResponse response = checkResponseStatus(user, jsonBody.toString(), status, lockApi, "PUT");
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("status", isString(s ->
+                                        s.equalsIgnoreCase("User " + username + " " + operation + "ed!"))));
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testRole(String user, int status, String role, String username, TestHint hint) {
+            System.out.println(hint.toString());
+
+            JsonObject jsonBody = new JsonObject();
+            jsonBody.addProperty("username", username);
+            jsonBody.addProperty("role", role);
+
+            HttpResponse response = checkResponseStatus(user, jsonBody.toString(), status, roleApi, "PUT");
+
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("id", isInteger())
+                                .value("name", isString())
+                                .value("role", role)
+                                .value("username", isString(s -> s.equalsIgnoreCase(username))));
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testTransaction(String user, String api, String method, int status, String body,
+                                            String answer, String answer2, TestHint hint) {
+
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(user, body, status, api, method);
+
+            // Check JSON in response
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("result", answer)
+                                .value("info", answer2));
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testAddIP(String user, int status, String ip, TestHint hint) {
+            System.out.println(hint.toString());
+
+            JsonObject jsonBody = new JsonObject();
+            jsonBody.addProperty("ip", ip);
+
+            HttpResponse response = checkResponseStatus(user, jsonBody.toString(), status, ipApi, "POST");
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("id", isInteger())
+                                .value("ip", ip));
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testDeleteIP(String user, int status, String ip, TestHint hint) {
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(user, "", status, ipApi + "/" + ip, "DELETE");
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("status", "IP " + ip + " successfully removed!"));
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testAddCard(String user, int status, String number, TestHint hint) {
+            System.out.println(hint.toString());
+
+            JsonObject jsonBody = new JsonObject();
+            jsonBody.addProperty("number", number);
+
+            HttpResponse response = checkResponseStatus(user, jsonBody.toString(), status, cardApi, "POST");
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("id", isInteger())
+                                .value("number", number));
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testDeleteCard(String user, int status, String number, TestHint hint) {
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(user, "", status, cardApi + "/" + number, "DELETE");
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("status", "Card " + number + " successfully removed!"));
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testGetIP(String user, int status, String answer, TestHint hint) {
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(user, "", status, ipApi, "GET");
+
+            if (response.getStatusCode() == 200) {
+                if (!response.getJson().isJsonArray()) {
+                    return CheckResult.wrong("Wrong object in response, expected array of JSON but was \n" +
+                            response.getContent().getClass());
+
+                }
+
+                JsonArray correctJson = getJson(answer).getAsJsonArray();
+                JsonArray responseJson = getJson(response.getContent()).getAsJsonArray();
+
+                if (responseJson.size() != correctJson.size()) {
+                    throw new WrongAnswer("Incorrect number - " +  responseJson.size() +
+                            " objects in response, must be - " + correctJson.size());
+                }
+
+                // Check JSON in response
+                for (int i =0; i < correctJson.size(); i++) {
+                    expect(responseJson.get(i).toString()).asJson().check(
+                            isObject()
+                                    .value("id", isInteger())
+                                    .value("ip", correctJson.get(i).getAsJsonObject().get("ip").getAsString())
+                    );
+                }
+
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testGetCard(String user, int status, String answer, TestHint hint) {
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(user, "", status, cardApi, "GET");
+
+            if (response.getStatusCode() == 200) {
+                if (!response.getJson().isJsonArray()) {
+                    return CheckResult.wrong("Wrong object in response, expected array of JSON but was \n" +
+                            response.getContent().getClass());
+
+                }
+
+                JsonArray correctJson = getJson(answer).getAsJsonArray();
+                JsonArray responseJson = getJson(response.getContent()).getAsJsonArray();
+
+                if (responseJson.size() != correctJson.size()) {
+                    throw new WrongAnswer("Incorrect number - " +  responseJson.size() +
+                            " objects in response, must be - " + correctJson.size());
+                }
+
+                // Check JSON in response
+                for (int i =0; i < correctJson.size(); i++) {
+                    expect(responseJson.get(i).toString()).asJson().check(
+                            isObject()
+                                    .value("id", isInteger())
+                                    .value("number", correctJson.get(i).getAsJsonObject().get("number").getAsString())
+                    );
+                }
+
+            }
+            return CheckResult.correct();
+        }
+
+        @DynamicTest
+        DynamicTesting[] dt = new DynamicTesting[]{
+                // Test POST request for signup api
+                () -> testAddUser(wronguser1, 400, "MERCHANT",
+                        new TestHint(userApi, wronguser1, "In case of wrong data in request, endpoint" +
+                                " must respond with BAD REQUEST  status (400).")), // 1
+
+                () -> testAddUser(wronguser2, 400, "MERCHANT",
+                        new TestHint(userApi, wronguser2, "In case of wrong data in request, endpoint" +
+                                " must respond with BAD REQUEST  status (400).")), // 2
+
+                () -> testAddUser(administrator, 201, "ADMINISTRATOR",
+                        new TestHint(userApi, johndoe1, "If user successfully added, endpoint" +
+                                " must respond with HTTP CREATED status (201) ")), // 3
+
+                () -> testListUser(administrator, 200,  listAnswer1, 0,
+                        new TestHint(userListApi, "", "Endpoint must respond with HTTP OK status (200)" +
+                                " and body with array of objects representing the users sorted by ID in ascending order.")), // 4
+
+
+                () -> testAddUser(johndoe1, 201, "MERCHANT",
+                        new TestHint(userApi, johndoe1, "If user successfully added, endpoint" +
+                                " must respond with HTTP CREATED status (201) ")), // 5
+
+                () -> testListUser(administrator, 200,  listAnswer1, 1,
+                        new TestHint(userListApi, "", "Endpoint must respond with HTTP OK status (200)" +
+                                " and body with array of objects representing the users sorted by ID in ascending order.")), // 6
+
+                () -> testListUser(wronguserCred1, 401,  listAnswer1, 0,
+                        new TestHint(userListApi, "", "A user with incorrect credentials is not allowed")), // 7
+
+                () -> testListUser(wronguserCred2, 401,  listAnswer1, 0,
+                        new TestHint(userListApi, "", "A user with incorrect credentials is not allowed")), // 8
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 401,tr1,
+                        "ALLOWED", "none",
+                        new TestHint(transactionApi, "", "Merchant after registration" +
+                                " must be LOCKED")), // 9
+
+                () -> testLock(administrator, 200, "UNLOCK", "johndoe1",
+                        new TestHint(lockApi, "", "A user johndoe1 must be UNLOCKED")), // 10
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,tr1,
+                        "ALLOWED", "none",
+                        new TestHint(transactionApi, "", "A user johndoe1 must be UNLOCKED")), // 11
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,tr1,
+                        "ALLOWED", "none",
+                        new TestHint(transactionApi, "amount = 1", "Result validating of Transaction" +
+                                " must be 'ALLOWED'")), // 12
+
+                // Testing persistence
+                () -> restartApplication(), // 13
+
+                () -> testListUser(administrator, 200,  listAnswer1, 1,
+                        new TestHint(userListApi, "", "After restart user must exist")), // 14
+
+                () -> testAddUser(johndoe1, 409, "MERCHANT",
+                        new TestHint(userApi, johndoe1, "In case of an attempt to register an existing user," +
+                                " endpoint must respond with HTTP CONFLICT status (409).")), // 15
+
+                () -> testAddUser(johndoe2, 201, "MERCHANT",
+                        new TestHint(userApi, johndoe2, "If user successfully added, endpoint" +
+                                " must respond with HTTP CREATED status (201) ")), // 16
+
+                () -> testListUser(administrator, 200,  listAnswer1, 2,
+                        new TestHint(userListApi, "", "Endpoint must respond with HTTP OK status (200)" +
+                                " and body with array of objects representing the users sorted by ID in ascending order.")), // 17
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200, tr2,
+                        "ALLOWED", "none",
+                        new TestHint(transactionApi, "amount = 199", "Result validating of Transaction" +
+                                " must be 'ALLOWED'")), // 18
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200, tr3,
+                        "ALLOWED", "none",
+                        new TestHint(transactionApi, "amount = 200", "Result validating of Transaction" +
+                                " must be 'ALLOWED'")), // 19
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200, tr4,
+                        "MANUAL_PROCESSING", "amount",
+                        new TestHint(transactionApi, "amount = 201", "Result validating of Transaction" +
+                                " must be 'MANUAL_PROCESSING'")), // 20
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200, tr5,
+                        "MANUAL_PROCESSING", "amount",
+                        new TestHint(transactionApi, "amount = 1499", "Result validating of Transaction" +
+                                " must be 'MANUAL_PROCESSING'")), // 21
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200, tr6,
+                        "MANUAL_PROCESSING", "amount",
+                        new TestHint(transactionApi, "amount = 1500", "Result validating of Transaction" +
+                                " must be 'MANUAL_PROCESSING'")), // 22
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200, tr7,
+                        "PROHIBITED", "amount",
+                        new TestHint(transactionApi, "amount = 1501", "Result validating of Transaction" +
+                                " must be 'PROHIBITED'")), // 23
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200, tr8,
+                        "PROHIBITED", "amount",
+                        new TestHint(transactionApi, "amount = 2000", "Result validating of Transaction" +
+                                " must be 'PROHIBITED'")), // 24
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400, trW1,
+                        "Wrong request!", "none",
+                        new TestHint(transactionApi, "amount = -1", "Response status" +
+                                " must be 'Bad request'")), // 25
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400, trW2,
+                        "Wrong request!", "none",
+                        new TestHint(transactionApi, "amount = 0", "Response status" +
+                                " must be 'Bad request'")), // 26
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400,trW3,
+                        "Wrong request!", "none",
+                        new TestHint(transactionApi, "amount = null", "Response status" +
+                                " must be 'Bad request'")), // 27
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400,trW4,
+                        "Wrong request!", "none",
+                        new TestHint(transactionApi, "amount = \"\"", "Response status" +
+                                " must be 'Bad request'")), // 28
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400, trW5,
+                        "Wrong request!",  "none",
+                        new TestHint(transactionApi, "amount = \" \"", "Response status" +
+                                " must be 'Bad request'")), // 29
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400, trW6,
+                        "Wrong request!",   "none",
+                        new TestHint(transactionApi, "empty body", "Response status" +
+                                " must be 'Bad request'")), // 30
+
+                () -> testDeleteUser(administrator,404,"somebody",
+                        new TestHint(userApi, userApi + "/" + "somebody", "If a user is not found," +
+                                " respond with HTTP Not Found status (404).")), // 31
+
+                () -> testDeleteUser(administrator,200,"johndoe1",
+                        new TestHint(userApi, userApi + "/" + "johndoe1", "The endpoint must delete" +
+                                " the user and respond with HTTP OK status (200)")), // 32
+
+                () -> testListUser(administrator, 200,  listAnswer2, 1,
+                        new TestHint(userListApi, "", "User 'johndoe1' must be delete")), // 33
+
+                () -> testRole(administrator,404,"MERCHANT", "johndoe22",
+                        new TestHint(roleApi, "", "If a user is not found, endpoint" +
+                                " must respond with the HTTP Not Found status (404).")), // 34
+
+                () -> testRole(administrator,400,"USER", "johndoe2",
+                        new TestHint(roleApi, "", "If a role is not found, endpoint" +
+                                " must respond with the HTTP Bad Request status (400).")), // 35
+
+                () -> testRole(administrator,400,"ADMINISTRATOR", "johndoe2",
+                        new TestHint(roleApi, "", "If a role is ADMINISTRATOR, endpoint" +
+                                " must respond with the HTTP Bad Request status (400).")), // 36
+
+                () -> testRole(administrator,200,"SUPPORT", "johndoe2",
+                        new TestHint(roleApi, "", "If a role successfully changed," +
+                                " respond with the HTTP OK status (200)")), // 37
+
+                () -> testRole(administrator,409,"SUPPORT", "johndoe2",
+                        new TestHint(roleApi, "", "If a role already assigned to a user," +
+                                " endpoint must respond with the HTTP Conflict status (409).")), // 38
+
+                () -> testLock(administrator, 200, "UNLOCK", "johndoe2",
+                        new TestHint(lockApi, "", "A user johndoe2 must be UNLOCKED")), // 39
+
+                () -> testListUser(johndoe2, 200,  listAnswer3, 1,
+                        new TestHint(userListApi, "", "Role for user 'johndoe2" +
+                                "' must be changed to SUPPORT")), // 40
+
+                () -> testTransaction(johndoe2, transactionApi, "POST", 403, tr1,
+                        "ALLOWED",   "none",
+                        new TestHint(transactionApi, "", "Role MERCHANT must be removed from" +
+                                " user johndoe2!")), // 41
+
+                // test Locking
+                () -> testAddUser(johndoe3, 201, "MERCHANT",
+                        new TestHint(userApi, johndoe3, "If user successfully added, endpoint" +
+                                " must respond with HTTP CREATED status (201) ")), // 42
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 401, tr1,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "MERCHANT user after registration" +
+                                " must be LOCKED")), // 43
+
+                () -> testLock(administrator, 200, "UNLOCK", "johndoe3",
+                        new TestHint(lockApi, "", "A user johndoe3 must be UNLOCKED")), // 44
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, tr1,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "A user johndoe3 must be UNLOCKED")), // 45
+
+                () -> testLock(administrator, 200, "LOCK", "johndoe3",
+                        new TestHint(lockApi, "", "A user johndoe3 must be LOCKED")), // 46
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 401, tr1,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "A user johndoe3 must be LOCKED")), // 47
+
+                () -> testLock(administrator, 200, "UNLOCK", "johndoe3",
+                        new TestHint(lockApi, "", "A user johndoe3 must be UNLOCKED")), // 48
+
+                // test role model
+                () -> testTransaction(administrator, transactionApi, "POST", 403, tr1,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "A user with role ADMINISTRATOR" +
+                                " must not have access to " + transactionApi)), // 49
+
+                () -> testTransaction(johndoe2, transactionApi, "POST", 403, tr1,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "A user with role SUPPORT" +
+                                " must not have access to " + transactionApi)), // 50
+
+                () -> testTransaction(null, transactionApi, "POST", 401, tr1,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "A user with role ANONYMOUS" +
+                                " must not have access to " + transactionApi)), // 51
+
+                () -> testDeleteUser(null,401,"johndoe1",
+                        new TestHint(userApi, "", "A user with role ANONYMOUS" +
+                                " must not have access to DELETE " + userApi)), // 52
+
+                () -> testDeleteUser(johndoe2,403,"johndoe1",
+                        new TestHint(userApi, "", "A user with role SUPPORT" +
+                                " must not have access to DELETE " + userApi)), // 53
+
+                () -> testDeleteUser(johndoe3,403,"johndoe1",
+                        new TestHint(userApi, "", "A user with role MERCHANT" +
+                                " must not have access to DELETE " + userApi)), // 54
+
+                () -> testListUser(null, 401,  listAnswer3, 1,
+                        new TestHint(userListApi, "", "A user with role ANONYMOUS" +
+                                " must not have access to " + userListApi)), // 55
+
+                () -> testListUser(johndoe3, 403,  listAnswer3, 1,
+                        new TestHint(userListApi, "", "A user with role MERCHANT" +
+                                " must not have access to " + userListApi)), // 56
+
+                () -> testGetIP(administrator, 403, ipAnswerEmpty,
+                        new TestHint(ipApi, "", "A user with role ADMINISTRATOR" +
+                                " must not have access to GET " + ipApi)), // 57
+
+                () -> testGetIP(johndoe3, 403, ipAnswerEmpty,
+                        new TestHint(ipApi, "", "A user with role MERCHANT" +
+                                " must not have access to GET " + ipApi)), // 58
+
+                () -> testAddIP(administrator, 403, "192.168.1.66",
+                        new TestHint(ipApi, "", "A user with role ADMINISTRATOR" +
+                                " must not have access to POST " + ipApi)), // 59
+
+                () -> testAddIP(johndoe3, 403, "192.168.1.66",
+                        new TestHint(ipApi, "", "A user with role MERCHANT" +
+                                " must not have access to POST " + ipApi)), // 60
+
+                () -> testDeleteIP(administrator, 403, "192.168.1.66",
+                        new TestHint(ipApi, "", "A user with role ADMINISTRATOR" +
+                                " must not have access to DELETE " + ipApi)), // 61
+
+                () -> testDeleteIP(johndoe3, 403, "192.168.1.66",
+                        new TestHint(ipApi, "", "A user with role MERCHANT" +
+                                " must not have access to DELETE " + ipApi)), // 62
+
+                () -> testGetCard(administrator, 403, cardAnswerEmpty,
+                        new TestHint(cardApi, "", "A user with role ADMINISTRATOR" +
+                                " must not have access to GET " + cardApi)), // 63
+
+                () -> testGetCard(johndoe3, 403, cardAnswerEmpty,
+                        new TestHint(cardApi, "", "A user with role MERCHANT" +
+                                " must not have access to GET " + cardApi)), // 64
+
+                () -> testAddCard(administrator, 403, "4000003305061034",
+                        new TestHint(cardApi, "", "A user with role ADMINISTRATOR" +
+                                " must not have access to POST " + cardApi)), // 65
+
+                () -> testAddCard(johndoe3, 403, "4000003305061034",
+                        new TestHint(cardApi, "", "A user with role MERCHANT" +
+                                " must not have access to POST " + cardApi)), // 66
+
+                () -> testDeleteIP(administrator, 403, "4000003305061034",
+                        new TestHint(cardApi, "", "A user with role ADMINISTRATOR" +
+                                " must not have access to DELETE " + cardApi)), // 67
+
+                () -> testDeleteIP(johndoe3, 403, "4000003305061034",
+                        new TestHint(cardApi, "", "A user with role MERCHANT" +
+                                " must not have access to DELETE " + cardApi)), // 68
+
+
+                // Test ip black list
+                () -> testGetIP(johndoe2, 200, ipAnswerEmpty,
+                        new TestHint(ipApi, "", "Endpoint must respond with empty array")), // 69
+
+                () -> testAddIP(johndoe2, 200, "192.168.1.66",
+                        new TestHint(ipApi, "", "IP must be added to Black List")), // 70
+
+                () -> testAddIP(johndoe2, 409, "192.168.1.66",
+                        new TestHint(ipApi, "", "If IP already in database, " +
+                                " endpoint must respond with the HTTP Conflict status (409).")), // 71
+
+                () -> testAddIP(johndoe2, 400, "192.168.351.66",
+                        new TestHint(ipApi, "", "If IP doesn't have right format," +
+                                " respond with HTTP Bad Request status (400)")), // 72
+
+                () -> testAddIP(johndoe2, 400, "192.168.1.",
+                        new TestHint(ipApi, "", "If IP doesn't have right format," +
+                                " respond with HTTP Bad Request status (400)")), // 73
+
+                () -> testAddIP(johndoe2, 200, "192.168.1.67",
+                        new TestHint(ipApi, "", "IP must be added to Black List")), // 74
+
+                () -> testGetIP(johndoe2, 200, ipAnswer,
+                        new TestHint(ipApi, "", "Endpoint must responds with Black List")), // 75
+
+                () -> testDeleteIP(johndoe2, 200, "192.168.1.66",
+                        new TestHint(ipApi, "", "IP must be removed from Black List")), // 76
+
+                () -> testDeleteIP(johndoe2, 404, "192.168.1.66",
+                        new TestHint(ipApi, "", "If IP not found in database, " +
+                                "respond with the HTTP Not Found status (404).")), // 77
+
+                () -> testDeleteIP(johndoe2, 400, "192.168.1.",
+                        new TestHint(ipApi, "", "If IP doesn't have right format," +
+                                " respond with HTTP Bad Request status (400)")), // 78
+
+                () -> testGetIP(johndoe2, 200, ipAnswer2,
+                        new TestHint(ipApi, "", "IP must be removed from Black List")), // 79
+
+
+                // Test card number black list
+                () -> testGetCard(johndoe2, 200, cardAnswerEmpty,
+                        new TestHint(cardApi, "", "Endpoint must respond with empty array")), // 80
+
+                () -> testAddCard(johndoe2, 200, "4000003305061034",
+                        new TestHint(cardApi, "", "A card must be added to Black List")), // 81
+
+                () -> testAddCard(johndoe2, 409, "4000003305061034",
+                        new TestHint(cardApi, "", "If card-number already in database, " +
+                                "endpoint must respond with the HTTP Conflict status (409).")), // 82
+
+                () -> testAddCard(johndoe2, 400, "400000330506103",
+                        new TestHint(cardApi, "", "If card-number doesn't have right format, " +
+                                "endpoint must respond with HTTP Bad Request status (400).")), // 83
+
+                () -> testAddCard(johndoe2, 400, "4000003305061033",
+                        new TestHint(cardApi, "", "If checksum of card-number is wrong, " +
+                                "endpoint must respond with HTTP Bad Request status (400).")), // 84
+
+                () -> testAddCard(johndoe2, 200, "4000003305160034",
+                        new TestHint(cardApi, "", "A card must be added to Black List")), // 85
+
+                () -> testGetCard(johndoe2, 200, cardAnswer,
+                        new TestHint(cardApi, "", "Endpoint must responds with Black List")), // 86
+
+                () -> testDeleteCard(johndoe2, 200, "4000003305061034",
+                        new TestHint(cardApi, "", "Card must be removed from Black List")), // 87
+
+                () -> testDeleteCard(johndoe2, 404, "4000003305061034",
+                        new TestHint(cardApi, "", "If card-number not found in database," +
+                                " respond with the HTTP Not Found status (404).")), // 88
+
+                () -> testDeleteCard(johndoe2, 400, "400000330506103",
+                        new TestHint(cardApi, "", "If card-number doesn't have right format, " +
+                                "endpoint must respond with HTTP Bad Request status (400).")), // 89
+
+                () -> testGetCard(johndoe2, 200, cardAnswer2,
+                        new TestHint(cardApi, "", "Card must be removed from Black List")), // 90
+
+                // Test new validating
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, trP1,
+                        "PROHIBITED",  "ip",
+                        new TestHint(transactionApi, "", "Transaction must be PROHIBITED" +
+                                " due to - suspicious ip reason")), // 91
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, trP2,
+                        "PROHIBITED",  "card-number",
+                        new TestHint(transactionApi, "", "Transaction must be PROHIBITED" +
+                                " due to - stolen card reason")), // 92
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, trP3,
+                        "PROHIBITED",  "card-number, ip",
+                        new TestHint(transactionApi, "", "Transaction must be PROHIBITED" +
+                                " due to - stolen card, suspicious ip reasons")), // 93
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, trP4,
+                        "PROHIBITED",  "amount, card-number, ip",
+                        new TestHint(transactionApi, "", "Transaction must be PROHIBITED" +
+                                " due to - amount, stolen card, suspicious ip reasons")), // 94
+
+                // Test correlation rules
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr1IP,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "Transaction must be ALLOWED")), // 95
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr2IP,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "Transaction must be ALLOWED")), // 96
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr22IP,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "Transaction must be ALLOWED")), // 97
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr3IP,
+                        "MANUAL_PROCESSING",  "ip-correlation",
+                        new TestHint(transactionApi, "", "Transaction must be MANUAL_PROCESSING" +
+                                " due to - ip correlation rule")), // 98
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr4IP,
+                        "PROHIBITED",  "ip-correlation",
+                        new TestHint(transactionApi, "", "Transaction must be PROHIBITED" +
+                                " due to - ip correlation rule")), // 99 Thnx to E. Kovko
+
+                () -> testAddCard(johndoe2, 200, "4000008449433403",
+                        new TestHint(cardApi, "", "A card must be added to Black List")), // 100
+
+                () -> testAddIP(johndoe2, 200, "192.168.1.5",
+                        new TestHint(ipApi, "", "IP must be added to Black List")), // 101
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr5IP,
+                        "PROHIBITED",  "amount, card-number, ip, ip-correlation",
+                        new TestHint(transactionApi, "", "Transaction must be PROHIBITED" +
+                                " due to - amount, card-number, ip, ip-correlation reasons")), // 102
+                //
+                () -> testDeleteCard(johndoe2, 200, "4000008449433403",
+                        new TestHint(cardApi, "", "Card must be removed from Black List")), // 103
+
+                () -> testDeleteIP(johndoe2, 200, "192.168.1.5",
+                        new TestHint(ipApi, "", "IP must be removed from Black List")), // 104
+
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr1Reg,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "Transaction must be ALLOWED")), // 105
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr2Reg,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "Transaction must be ALLOWED")), // 106
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr22Reg,
+                        "ALLOWED",  "none",
+                        new TestHint(transactionApi, "", "Transaction must be ALLOWED")), // 107
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr3Reg,
+                        "MANUAL_PROCESSING",  "region-correlation",
+                        new TestHint(transactionApi, "", "Transaction must be MANUAL_PROCESSING" +
+                                " due to - region correlation rule")), // 108
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr4Reg,
+                        "PROHIBITED",  "region-correlation",
+                        new TestHint(transactionApi, "", "Transaction must be PROHIBITED" +
+                                " due to - region correlation rule")), // 109
+
+                () -> testAddCard(johndoe2, 200, "4000008449433403",
+                        new TestHint(cardApi, "", "A card must be added to Black List")), // 110
+
+                () -> testAddIP(johndoe2, 200, "192.168.1.2",
+                        new TestHint(ipApi, "", "IP must be added to Black List")), // 111
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr5Reg,
+                        "PROHIBITED",  "amount, card-number, ip, region-correlation",
+                        new TestHint(transactionApi, "", "Transaction must be PROHIBITED" +
+                                " due to - amount, card-number, ip, region-correlation reasons")), // 112
+
+                () -> testDeleteCard(johndoe2, 200, "4000008449433403",
+                        new TestHint(cardApi, "", "Card must be removed from Black List")), // 113
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200, corr3IP,
+                        "MANUAL_PROCESSING",  "ip-correlation",
+                        new TestHint(transactionApi, "", "Transaction must be MANUAL_PROCESSING" +
+                                " due to - ip correlation rule")), // 114
+
+        };
+    }
+  learner_created: false
+- name: src/antifraud/security/exeption/UserNotFoundException.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/model/dto/OperationDto.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/controller/TransactionController.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/model/entity/Transaction.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/model/annotation/EnumValidator.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/model/mapper/TransactionMapper.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/dao/HistoryDao.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/model/enums/RegIP.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/model/enums/WorldRegion.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/model/enums/Field.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/model/annotation/EnumValueCorrect.java
+  visible: true
+  learner_created: true
+feedback_link: https://hyperskill.org/learn/step/18071#comment
+status: Solved
+record: 4
